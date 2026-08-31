@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel>
+<title>Sample</title>
+<item>
+  <title>Pentagon announces laser deployment</title>
+  <link>https://example.com/1</link>
+  <description>An item about directed energy.</description>
+  <pubDate>Sun, 31 Aug 2026 08:00:00 GMT</pubDate>
+</item>
+<item>
+  <title>Carrier transits Singapore Strait</title>
+  <link>https://example.com/2</link>
+  <description>An item about naval moves.</description>
+  <pubDate>Sun, 31 Aug 2026 07:00:00 GMT</pubDate>
+</item>
+</channel></rss>

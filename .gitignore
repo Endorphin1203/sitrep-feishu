@@ -1,0 +1,19 @@
+# 密钥与本地配置（严禁提交）
+config.json
+listener_config.json
+.env
+
+# 运行产物
+logs/
+*.log
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# 工具链
+.superpowers/
+
+# macOS
+.DS_Store

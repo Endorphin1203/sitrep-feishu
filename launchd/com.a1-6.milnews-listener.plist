@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.a1-6.milnews-listener</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/a1-6/feishu-milnews/.venv/bin/python3</string>
+        <string>/Users/a1-6/feishu-milnews/listener.py</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/a1-6/feishu-milnews</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/Users/a1-6/feishu-milnews/logs/listener-launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/a1-6/feishu-milnews/logs/listener-launchd.err.log</string>
+</dict>
+</plist>

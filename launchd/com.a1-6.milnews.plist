@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.a1-6.milnews</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/a1-6/Documents/ClaudeCode/2026-08-31/feishu-milnews/run_daily.sh</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/a1-6/Documents/ClaudeCode/2026-08-31/feishu-milnews</string>
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict>
+            <key>Hour</key><integer>7</integer>
+            <key>Minute</key><integer>30</integer>
+        </dict>
+        <dict>
+            <key>Hour</key><integer>12</integer>
+            <key>Minute</key><integer>0</integer>
+        </dict>
+    </array>
+    <key>StandardOutPath</key>
+    <string>/Users/a1-6/Documents/ClaudeCode/2026-08-31/feishu-milnews/logs/launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/a1-6/Documents/ClaudeCode/2026-08-31/feishu-milnews/logs/launchd.err.log</string>
+</dict>
+</plist>
