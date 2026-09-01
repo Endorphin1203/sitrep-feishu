@@ -9,13 +9,24 @@ BASE = Path(__file__).resolve().parent.parent
 import sys; sys.path.insert(0, str(BASE))
 import push_feishu as push
 
+def make_item(i):
+    return {"cn_title": f"美军新闻标题{i}", "source": "Reuters",
+            "published_edt": "2026-08-31 20:15", "title_en": f"US news title {i}",
+            "title_cn": f"美军新闻标题{i}", "summary": f"概述{i}",
+            "china_impact": "暂无直接关联", "military_ref": f"警示{i}",
+            "url": f"https://x.com/{i}"}
+
 def make_report(n_items):
-    secs = [{"section": "一、作战行动与部署", "items": [
-        {"title": f"新闻标题{i}", "source": "CNN", "url": f"https://x.com/{i}",
-         "summary": f"要点{i}", "tag": "❗" if i == 0 else "⚠️"}
-        for i in range(n_items)]}]
-    return {"window": {"start_utc": "2026-08-31T00:00:00+00:00", "end_utc": "2026-08-31T05:00:00+00:00"},
-            "sections": secs, "verdict": "研判"}
+    secs = [{"section": "一、严格5小时窗口内", "items": [make_item(i) for i in range(n_items)]},
+            {"section": "二、当天00:00至窗口起点的重要军事动态", "items": []},
+            {"section": "三、当天最值得关注的美国涉华军事舆论与战略分析", "items": []},
+            {"section": "四、当天智库分析文章", "items": []},
+            {"section": "五、来源清单", "items": []}]
+    return {"window": {"start_utc": "2026-08-31T22:30:00+00:00", "end_utc": "2026-09-01T03:30:00+00:00"},
+            "day_start_utc": "2026-09-01T04:00:00+00:00",
+            "sections": secs,
+            "sources": [{"name": "Reuters", "url": "https://www.reuters.com"}],
+            "verdict": "研判"}
 
 class TestBuildPostMessage(unittest.TestCase):
     def test_structure_and_title(self):
@@ -23,32 +34,50 @@ class TestBuildPostMessage(unittest.TestCase):
         msg = push.build_post_message(report, 1, 1)
         self.assertEqual(msg["msg_type"], "post")
         post = msg["content"]["post"]["zh_cn"]
-        self.assertIn("美军新闻简报", post["title"])
-        self.assertEqual(len(post["content"]), 4)  # 1节2条 => 节标题段 + 2条段 + 1段研判
-        # 首段为节标题
-        head = post["content"][0][0]
-        self.assertEqual(head["tag"], "text")
-        self.assertIn("一、作战行动与部署", head["text"])
-        # 条目段含标题、tag 与超链接
-        first = post["content"][1][0]
-        self.assertEqual(first["tag"], "text")
-        self.assertIn("新闻标题0", first["text"])
-        self.assertIn("❗", first["text"])
+        # 标题行新格式：截至 EDT ... 对应北京时间 ...
+        self.assertIn("截至 美国东部时间（EDT）", post["title"])
+        self.assertIn("本轮严格5小时窗口为", post["title"])
+        self.assertIn("对应北京时间", post["title"])
+        # 内容：节标题 + 2条目段 + 研判段 + 来源清单段（标题+1条）
+        self.assertEqual(len(post["content"]), 6)
+        # 条目段：编号行含cn_title、字段行齐全
+        item_text = "".join(b["text"] for b in post["content"][1] if b["tag"] == "text")
+        self.assertIn("1. 美军新闻标题0", item_text)
+        self.assertIn("来源：Reuters", item_text)
+        self.assertIn("发布时间：美国东部时间2026-08-31 20:15", item_text)
+        self.assertIn("标题：US news title 0", item_text)
+        self.assertIn("中文标题：美军新闻标题0", item_text)
+        self.assertIn("概述：概述0", item_text)
+        self.assertIn("对中国的直接影响：暂无直接关联", item_text)
+        self.assertIn("军事借鉴警示：警示0", item_text)
         link = [b for b in post["content"][1] if b["tag"] == "a"]
         self.assertEqual(link[0]["href"], "https://x.com/0")
+        # 来源清单段
+        src_text = "".join(b["text"] for b in post["content"][-2] if b["tag"] == "text")
+        self.assertIn("Reuters", src_text)
 
-    def test_tag_normalize_short_forms(self):
-        # 终审修复：模型输出简写 tag（⚠️/❗/🔬）应归一化为规范值
-        report = make_report(3)
-        msg = push.build_post_message(report, 1, 1)
-        post = msg["content"]["post"]["zh_cn"]
-        # 条目1 tag=❗ → 规范化为"❗对华直接影响"；条目2/3 tag=⚠️ → "⚠️警示"
-        self.assertIn("❗对华直接影响", post["content"][1][0]["text"])
-        self.assertIn("⚠️警示", post["content"][2][0]["text"])
-        # 空 tag 保持不变（无 tag 字段时无该后缀）
-        item_no_tag = {"title": "无标注", "source": "S", "url": "https://x.com/n", "summary": "s", "tag": ""}
-        para = push._item_paragraph(item_no_tag)
-        self.assertNotIn("警示", para[0]["text"])
+class TestWindowTitle(unittest.TestCase):
+    def test_title_times(self):
+        report = make_report(1)
+        t = push._window_title(report, 1, 1)
+        # start 22:30 UTC = 18:30 EDT；end 03:30 UTC = 前一日23:30 EDT（9月1日03:30UTC=8月31日23:30EDT）
+        self.assertIn("截至 美国东部时间（EDT）08月31日 23:30", t)
+        self.assertIn("08月31日 18:30—08月31日 23:30 EDT", t)
+        # 北京时间：22:30 UTC = 次日06:30 BJT；03:30 UTC = 11:30 BJT
+        self.assertIn("对应北京时间 9月1日06:30—9月1日11:30", t)
+
+class TestFmtToleratesZulu(unittest.TestCase):
+    """模型输出的 window.start_utc/end_utc 可能为 Z 后缀 ISO（如 2026-08-31T21:15:00Z），
+    Python 3.9 fromisoformat 不识别，fmt_edt/fmt_bj 必须容错（replace Z -> +00:00）且解析失败返回「?」"""
+    def test_fmt_edt_zulu(self):
+        self.assertEqual(push.fmt_edt("2026-08-31T21:15:00Z"), "08月31日 17:15")
+
+    def test_fmt_bj_zulu(self):
+        self.assertEqual(push.fmt_bj("2026-08-31T21:15:00Z"), "9月1日05:15")
+
+    def test_fmt_invalid_returns_question_mark(self):
+        self.assertEqual(push.fmt_edt("not-a-date"), "?")
+        self.assertEqual(push.fmt_bj(""), "?")
 
 class TestSplitParts(unittest.TestCase):
     def test_small_report_single_part(self):
@@ -69,7 +98,7 @@ class TestSplitParts(unittest.TestCase):
                  for para in p["content"]["post"]["zh_cn"]["content"]
                  for b in para if b["tag"] == "text"]
         for i in range(50):
-            self.assertTrue(any(f"新闻标题{i}（CNN）" in t for t in texts),
+            self.assertTrue(any(f"{i+1}. 美军新闻标题{i}" in t for t in texts),
                             f"第{i}条新闻在拆分后丢失")
         for p in parts:
             size = len(json.dumps(p, ensure_ascii=False).encode("utf-8"))

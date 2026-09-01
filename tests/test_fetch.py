@@ -43,3 +43,48 @@ class TestParseFeed(unittest.TestCase):
         self.assertEqual(items[0]["source"], "测试媒体")
         self.assertEqual(items[0]["url"], "https://example.com/1")
         self.assertEqual(items[0]["published_utc"], "2026-08-31T08:00:00+00:00")
+
+class TestBuildGoogleUrls(unittest.TestCase):
+    def test_uses_fetch_hours(self):
+        cfg = {"fetch_hours": 24, "window_hours": 5,
+               "google_news_queries": ["test query"]}
+        urls = fetch_news.build_google_urls(cfg)
+        self.assertEqual(len(urls), 1)
+        self.assertIn("when:24h", urls[0])
+        self.assertIn("test%20query", urls[0])
+
+    def test_fallback_to_window_hours(self):
+        cfg = {"window_hours": 5, "google_news_queries": ["q"]}
+        urls = fetch_news.build_google_urls(cfg)
+        self.assertIn("when:5h", urls[0])
+
+class TestCapPerSource(unittest.TestCase):
+    def test_caps_same_source_to_30_keeps_others(self):
+        """同源40条截到最新30条，异源10条全部保留"""
+        items = []
+        for i in range(40):
+            items.append({
+                "title": f"聚合新闻{i}", "url": f"https://agg.com/{i}",
+                "source": "Google News聚合",
+                "published_utc": (NOW - timedelta(minutes=i)).isoformat(),
+                "summary": "",
+            })
+        for i in range(10):
+            items.append({
+                "title": f"智库文章{i}", "url": f"https://thinktank.com/{i}",
+                "source": "War on the Rocks",
+                "published_utc": (NOW - timedelta(minutes=i)).isoformat(),
+                "summary": "",
+            })
+        out = fetch_news.cap_per_source(items, max_per_source=30)
+        agg = [i for i in out if i["source"] == "Google News聚合"]
+        expert = [i for i in out if i["source"] == "War on the Rocks"]
+        self.assertEqual(len(out), 40)          # 30 + 10
+        self.assertEqual(len(agg), 30)          # 同源被截到30条
+        self.assertEqual(len(expert), 10)       # 异源全部保留
+        # 同源保留的是最新的30条（时间最新的优先）
+        oldest_kept = min(i["published_utc"] for i in agg)
+        dropped = max(i["published_utc"] for i in items
+                      if i["source"] == "Google News聚合"
+                      and i["url"] not in {x["url"] for x in agg})
+        self.assertGreaterEqual(oldest_kept, dropped)

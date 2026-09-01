@@ -4,7 +4,9 @@
     "China military OR Taiwan OR \"South China Sea\"",
     "\"defense technology\" OR \"military technology\" OR drone OR hypersonic",
     "think tank OR CSIS OR RAND China military",
-    "\"US military\" controversy OR criticism OR readiness"
+    "\"US military\" controversy OR criticism OR readiness",
+    "site:reuters.com (military OR defense OR Pentagon)",
+    "(site:pacom.mil OR site:navy.mil OR site:af.mil OR site:northcom.mil OR site:eucom.mil)"
   ],
   "expert_feeds": [
     "https://www.defensenews.com/arc/outboundfeeds/rss/",
@@ -14,9 +16,14 @@
     "https://news.usni.org/feed",
     "https://warontherocks.com/feed/",
     "https://www.defense.gov/DesktopModules/ArticleCS/RSS.ashx?ContentType=1&Site=945&max=20",
-    "https://www.csis.org/rss.xml"
+    "https://www.csis.org/rss.xml",
+    "https://moxie.foxnews.com/google-publisher/world.xml",
+    "https://rss.nytimes.com/services/xml/rss/nyt/World.xml",
+    "https://feeds.washingtonpost.com/rss/world",
+    "https://www.centcom.mil/DesktopModules/ArticleCS/RSS.ashx?ContentType=1&Site=808&max=20"
   ],
-  "max_items": 60,
+  "max_items": 120,
+  "fetch_hours": 24,
   "window_hours": 5,
   "feishu_webhook": "PASTE_YOUR_FEISHU_WEBHOOK_URL_HERE"
 }

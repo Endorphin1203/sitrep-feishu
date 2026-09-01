@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""推送层：report.json -> 飞书 post 富文本（拆分+重试+告警）"""
+"""推送层：report.json(V2) -> 飞书 post 富文本（拆分+重试+告警）"""
 import json, sys, time
 from datetime import datetime
 from pathlib import Path
@@ -11,6 +11,9 @@ BASE = Path(__file__).resolve().parent
 REPORT_PATH = BASE / "logs" / "last_report.json"
 LIMIT = 18000  # 单条消息体字节上限（保守值）
 US_EAST = ZoneInfo("America/New_York")
+BEIJING = ZoneInfo("Asia/Shanghai")
+
+TAG_NORMALIZE = {"⚠️": "⚠️警示", "❗": "❗对华直接影响", "🔬": "🔬技术借鉴"}
 
 
 def load_config():
@@ -18,46 +21,81 @@ def load_config():
         return json.load(f)
 
 
-def fmt_us_time(iso):
-    """UTC ISO -> 美东时间显示串"""
-    dt = datetime.fromisoformat(iso).astimezone(US_EAST)
-    return dt.strftime("%m月%d日 %H:%M")
+def _parse_utc(iso):
+    """UTC ISO 字符串 -> 时区感知 datetime；容错 Z 后缀与非法输入（失败返回 None）
+
+    模型输出的 window.start_utc/end_utc/day_start_utc 可能带 Z 后缀
+    （如 2026-08-31T21:15:00Z），Python 3.9 的 fromisoformat 不识别，
+    此处先 replace("Z", "+00:00") 再解析；解析失败兜底返回 None。"""
+    try:
+        return datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+
+
+def fmt_edt(iso):
+    """UTC ISO -> 美东时间显示串（MM月DD日 HH:MM）；解析失败返回「?」"""
+    dt = _parse_utc(iso)
+    if dt is None:
+        return "?"
+    return dt.astimezone(US_EAST).strftime("%m月%d日 %H:%M")
+
+
+def fmt_bj(iso):
+    """UTC ISO -> 北京时间显示串（M月D日HH:MM）；解析失败返回「?」"""
+    dt = _parse_utc(iso)
+    if dt is None:
+        return "?"
+    return dt.astimezone(BEIJING).strftime("%-m月%-d日%H:%M")
 
 
 def _window_title(report, part, total):
     w = report.get("window", {})
-    start = fmt_us_time(w.get("start_utc", "")) if w.get("start_utc") else "?"
-    end = fmt_us_time(w.get("end_utc", "")) if w.get("end_utc") else "?"
-    title = f"美军新闻简报｜美东 {start}–{end}"
+    start, end = w.get("start_utc", ""), w.get("end_utc", "")
+    title = f"截至 美国东部时间（EDT）{fmt_edt(end)}，本轮严格5小时窗口为 {fmt_edt(start)}—{fmt_edt(end)} EDT，对应北京时间 {fmt_bj(start)}—{fmt_bj(end)}"
     return title + (f"（{part}/{total}）" if total > 1 else "")
 
 
-TAG_NORMALIZE = {"⚠️": "⚠️警示", "❗": "❗对华直接影响", "🔬": "🔬技术借鉴"}
-
-
-def _item_paragraph(it):
-    """单条新闻 -> post 段落；仅接受 title/source/url/summary/tag 字段"""
-    tag = TAG_NORMALIZE.get(it.get("tag") or "", it.get("tag") or "")
-    text = f"▎{it['title']}（{it['source']}）"
-    if tag:
-        text += f" {tag}"
-    if it.get("summary"):
-        text += f"\n{it['summary']}"
-    para = [{"tag": "text", "text": text}]
+def _item_paragraph(idx, it):
+    """V2 条目 -> post 段落：编号+9字段+原文链接"""
+    lines = [
+        f"{idx}. {it.get('cn_title', '')}",
+        f"来源：{it.get('source', '')}",
+        f"发布时间：美国东部时间{it.get('published_edt', '')}",
+        f"标题：{it.get('title_en', '')}",
+        f"中文标题：{it.get('title_cn', '')}",
+        f"概述：{it.get('summary', '')}",
+        f"对中国的直接影响：{it.get('china_impact', '')}",
+        f"军事借鉴警示：{it.get('military_ref', '')}",
+    ]
+    para = [{"tag": "text", "text": "\n".join(lines)}]
     if it.get("url"):
         para.append({"tag": "a", "text": "原文", "href": it["url"]})
     return para
 
 
+def _sources_paragraphs(sources):
+    """来源清单：标题段 + 每条一个段落"""
+    paras = [[{"tag": "text", "text": "【五、来源清单】"}]]
+    for i, s in enumerate(sources or [], start=1):
+        para = [{"tag": "text", "text": f"{i}. {s.get('name', '')}"}]
+        if s.get("url"):
+            para.append({"tag": "a", "text": s["url"], "href": s["url"]})
+        paras.append(para)
+    return paras
+
+
 def build_post_message(report, part, total):
-    """report -> 单条飞书 post 消息体；part/total 用于拆分标识"""
+    """report(V2) -> 单条飞书 post 消息体；part/total 用于拆分标识"""
     content = []
     for sec in report.get("sections", []):
         if not sec.get("items"):
             continue
         content.append([{"tag": "text", "text": f"【{sec['section']}】"}])
-        for it in sec["items"]:
-            content.append(_item_paragraph(it))
+        for i, it in enumerate(sec["items"], start=1):
+            content.append(_item_paragraph(i, it))
+    if report.get("sources"):
+        content.extend(_sources_paragraphs(report["sources"]))
     if report.get("verdict"):
         content.append([{"tag": "text", "text": f"〔综合研判〕{report['verdict']}"}])
     return {"msg_type": "post",
@@ -73,7 +111,8 @@ def _msg_size(blocks, title):
 
 
 def split_parts(report, limit=LIMIT):
-    """超限时按条目边界拆成多个 part（每条新闻完整保留在某个 part 内）"""
+    """超限时按条目边界拆成多个 part（每条新闻完整保留在某个 part 内）；
+    来源清单与研判放在最后一个 part"""
     full = build_post_message(report, 1, 1)
     if len(json.dumps(full, ensure_ascii=False).encode("utf-8")) <= limit:
         return [full]
@@ -85,14 +124,21 @@ def split_parts(report, limit=LIMIT):
         if not items:
             continue
         header = [[{"tag": "text", "text": f"【{sec['section']}】"}]]
-        for idx, it in enumerate(items):
+        for idx, it in enumerate(items, start=1):
             # 节标题与本节第一条同批；每条新闻不可再拆
-            block = (header if idx == 0 else []) + [_item_paragraph(it)]
+            block = (header if idx == 1 else []) + [_item_paragraph(idx, it)]
             if current and _msg_size(current + block, probe) > limit:
                 parts.append(current)
                 current = block
             else:
                 current = current + block
+    if report.get("sources"):
+        block = _sources_paragraphs(report["sources"])
+        if current and _msg_size(current + block, probe) > limit:
+            parts.append(current)
+            current = block
+        else:
+            current = current + block
     if report.get("verdict"):
         block = [[{"tag": "text", "text": f"〔综合研判〕{report['verdict']}"}]]
         if current and _msg_size(current + block, probe) > limit:

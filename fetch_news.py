@@ -11,6 +11,7 @@ CONFIG_PATH = BASE / "config.json"
 OUT_PATH = BASE / "logs" / "last_raw_items.json"
 HEADERS = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
 GN_TEMPLATE = "https://news.google.com/rss/search?q={q}&hl=en-US&gl=US&ceid=US:en&when:{h}h"
+PER_SOURCE_MAX = 30  # 每个信源最多保留条数，防止聚合源挤占专家源与智库条目
 
 
 def load_config():
@@ -19,8 +20,8 @@ def load_config():
 
 
 def build_google_urls(config):
-    """装配5个 Google News 关键词 RSS URL（when 参数即小时窗口）"""
-    hours = config["window_hours"]
+    """装配 Google News 关键词 RSS URL（when 参数即抓取小时窗口）"""
+    hours = config.get("fetch_hours", config["window_hours"])
     return [GN_TEMPLATE.format(q=urllib.parse.quote(q), h=hours)
             for q in config["google_news_queries"]]
 
@@ -84,6 +85,19 @@ def dedupe(items):
     return out
 
 
+def cap_per_source(items, max_per_source=PER_SOURCE_MAX):
+    """per-source cap：各信源仅保留最新 max_per_source 条，保证信源多样性"""
+    from collections import defaultdict
+    by_source = defaultdict(list)
+    for it in items:
+        by_source[it["source"]].append(it)
+    capped = []
+    for src, src_items in by_source.items():
+        src_items.sort(key=lambda x: x["published_utc"], reverse=True)
+        capped.extend(src_items[:max_per_source])
+    return capped
+
+
 def fetch_all_items(config, now_utc):
     """抓取全部信源并标准化"""
     items = []
@@ -103,7 +117,9 @@ def main():
     config = load_config()
     now = datetime.now(timezone.utc)
     raw = fetch_all_items(config, now)
-    kept = dedupe(filter_window(raw, now, config["window_hours"]))
+    fetch_hours = config.get("fetch_hours", config["window_hours"])
+    kept = dedupe(filter_window(raw, now, fetch_hours))
+    kept = cap_per_source(kept, PER_SOURCE_MAX)
     kept.sort(key=lambda x: x["published_utc"], reverse=True)
     kept = kept[: config["max_items"]]
     OUT_PATH.parent.mkdir(exist_ok=True)
