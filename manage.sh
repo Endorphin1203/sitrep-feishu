@@ -1,9 +1,11 @@
 #!/bin/bash
 # SITREP-Feishu 运维管理脚本
-# 用法: manage.sh {status|start|stop|push|restart-listener}
+# 用法: manage.sh {status|start|stop|disable|enable|push|restart-listener}
 #   status            查看两个任务状态与最近运行日志
 #   start             启动定时任务与监听进程（已加载则跳过）
-#   stop              停止定时任务与监听进程（本次登录内；重启Mac后自动恢复）
+#   stop              临时停止（本次登录内有效；重启Mac后自动恢复）
+#   disable           永久停用（stop + 移走 plist，重启后不再自动运行）
+#   enable            恢复启用（移回 plist + start）
 #   push              手动触发一次新闻简报
 #   restart-listener  重启飞书事件监听进程
 set -u
@@ -11,6 +13,7 @@ set -u
 LISTENER="com.a1-6.milnews-listener"
 SCHEDULER="com.a1-6.milnews"
 AGENTS_DIR="$HOME/Library/LaunchAgents"
+DISABLED_DIR="$HOME/launchagents-disabled"
 DIR="$(cd "$(dirname "$0")" && pwd)"
 
 gui_state() {
@@ -61,6 +64,27 @@ cmd_stop() {
     done
 }
 
+cmd_disable() {
+    cmd_stop
+    mkdir -p "$DISABLED_DIR"
+    for label in "$LISTENER" "$SCHEDULER"; do
+        if [ -f "$AGENTS_DIR/$label.plist" ]; then
+            mv "$AGENTS_DIR/$label.plist" "$DISABLED_DIR/" && echo "$label 已永久停用（plist 移至 ${DISABLED_DIR}）"
+        fi
+    done
+    echo "提示：重启Mac后也不会自动运行；恢复请用 manage.sh enable"
+}
+
+cmd_enable() {
+    mkdir -p "$AGENTS_DIR"
+    for label in "$SCHEDULER" "$LISTENER"; do
+        if [ -f "$DISABLED_DIR/$label.plist" ] && [ ! -f "$AGENTS_DIR/$label.plist" ]; then
+            mv "$DISABLED_DIR/$label.plist" "$AGENTS_DIR/" && echo "$label 已恢复（plist 移回 LaunchAgents）"
+        fi
+    done
+    cmd_start
+}
+
 cmd_push() {
     echo "手动触发一次简报（约2-4分钟）..."
     bash "$DIR/run_daily.sh"
@@ -78,7 +102,9 @@ case "${1:-}" in
     status) cmd_status ;;
     start) cmd_start ;;
     stop) cmd_stop ;;
+    disable) cmd_disable ;;
+    enable) cmd_enable ;;
     push) cmd_push ;;
     restart-listener) cmd_restart_listener ;;
-    *) echo "用法: manage.sh {status|start|stop|push|restart-listener}"; exit 1 ;;
+    *) echo "用法: manage.sh {status|start|stop|disable|enable|push|restart-listener}"; exit 1 ;;
 esac
