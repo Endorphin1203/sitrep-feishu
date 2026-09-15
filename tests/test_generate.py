@@ -77,6 +77,9 @@ class TestBuildPrompt(unittest.TestCase):
         self.assertIn("2026-08-31 19:30", system)
         self.assertIn('{"window"', system)
         self.assertIn('"sources":[{"name":"","url":""}]', system)
+        # 筛选范围约束：只收录美国侧新闻，排除中国军事动向
+        self.assertIn("筛选范围约束", system)
+        self.assertIn("不收录中国军事动向", system)
 
 class TestParseReport(unittest.TestCase):
     def test_parse_strips_markdown_fence(self):
@@ -189,3 +192,34 @@ class TestParseUtc(unittest.TestCase):
 
     def test_invalid_returns_none(self):
         self.assertIsNone(gen._parse_utc("不是时间"))
+
+
+class TestFilterChinaItems(unittest.TestCase):
+    """硬过滤：内容主体为中国自身动向的条目必须移除"""
+
+    def _report(self, titles):
+        secs = [{"section": "x", "items": [
+            {"cn_title": t, "title_en": "English title", "source": "s",
+             "published_edt": "2026-08-31 20:00", "title_cn": t, "summary": "s",
+             "china_impact": "无", "military_ref": "无", "url": "u"}
+            for t in titles]}]
+        return {"sections": secs}
+
+    def test_china_side_titles_removed(self):
+        obj = self._report([
+            "美媒：中国最高情报官员警告AI威胁",
+            "美媒聚焦中国战时动员法修订",
+            "美媒：沙特据称使用中国制DF-15A导弹",
+            "美防长称将持续对台军售",
+            "美智库发布台海兵推新报告",
+        ])
+        obj, n = gen.filter_china_items(obj)
+        self.assertEqual(n, 3)
+        kept = [it["cn_title"] for it in obj["sections"][0]["items"]]
+        self.assertEqual(kept, ["美防长称将持续对台军售", "美智库发布台海兵推新报告"])
+
+    def test_us_side_kept(self):
+        obj = self._report(["美海军航母打击群进入南海", "五角大楼公布新预算"])
+        obj, n = gen.filter_china_items(obj)
+        self.assertEqual(n, 0)
+        self.assertEqual(len(obj["sections"][0]["items"]), 2)

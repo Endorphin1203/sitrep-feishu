@@ -32,11 +32,12 @@ SYSTEM_PROMPT = """你是军事战略情报分析助手。基于提供的新闻�
 sections 五部分（顺序固定，section 名必须与给定完全一致）：
 1. "一、严格5小时窗口内"——发布时间在 S 与 T 之间的条目
 2. "二、当天00:00至窗口起点的重要军事动态"——发布时间在 D 与 S 之间的条目
-3. "三、当天最值得关注的美国涉华军事舆论与战略分析"——当天涉华主题条目（可跨窗口，与一二部分可有少量重叠）
+3. "三、当天最值得关注的美国涉华军事舆论与战略分析"——美国侧的涉华内容：美方官员/军方对华表态、美国对华政策与制裁动向、美智库涉华报告、美国媒体对华战略分析。**不收录中国自身动向（即使由美国媒体转述）：如中国修改法律、解放军训练部署、中国官员与情报机构表态、中国武器出口或使用等，一律排除**。此部分条目的 cn_title 应以美国侧视角撰写（如"美媒聚焦中国战时动员法修订"而非"中国修改法律"）。
 4. "四、当天智库分析文章"——当天智库/研究机构/媒体深度分析类文章
 5. "五、来源清单"——此部分 items 置空数组
 
 每部分（第五部分除外）4-6条精选。筛选标准：对军队有战略价值、有借鉴参考意义、警示警惕类、对中国有直接影响。
+筛选范围约束（必须严格遵守）：只收录"美国侧"的新闻——美军动态、美国国防政策、美国舆论、美国前沿军事技术、美国智库分析。不收录中国军事动向类条目（如解放军训练部署、中国防务政策与法律修改、中国情报机构表态、中国武器发展/出口/使用等中国自身动向），**即使它们出现在输入数据中、即使由美国媒体转述，也一律排除**。第三部分"美国涉华舆论与战略分析"收录的是美国侧的涉华内容（美方表态、美对华政策、美智库涉华报告），而非中国自身在做什么。
 输出量硬约束（防止超出API上限被截断）：summary 不超过2句；全篇JSON总长度控制在5000个token以内；条目较多时优先保留发布时间最新与战略价值最高的条目。
 每条 item 9个字段：
 - cn_title：中文短标题（20-30字，概括核心）
@@ -136,6 +137,31 @@ def _parse_edt(s):
         return None
 
 
+CHINA_SIDE_RE = [
+    re.compile(r"^(美媒[^中]{0,10})?(中国|解放军|北京|中方|中共)"),
+    re.compile(r"中国制.{0,6}(导弹|武器|无人机|装备)"),
+]
+
+
+def filter_china_items(obj):
+    """硬过滤：移除内容主体为中国自身动向的条目（提示词软约束的确定性兜底）。
+
+    判定基于 cn_title+title_en 的文本模式：剥离"美媒："前缀后以中国/解放军/
+    北京/中方/中共开头（中国为主体），或含"中国制XX武器"（中国武器出口/使用）。
+    返回 (obj, removed_count)。"""
+    removed = 0
+    for sec in obj.get("sections", []):
+        kept = []
+        for it in sec.get("items", []):
+            text = f"{it.get('cn_title', '')} {it.get('title_en', '')}"
+            if any(r.search(text) for r in CHINA_SIDE_RE):
+                removed += 1
+            else:
+                kept.append(it)
+        sec["items"] = kept
+    return obj, removed
+
+
 def rebalance_sections(obj):
     """程序化兜底：按发布时间修正第一/二部分条目归属（模型切分偶发越界）。
 
@@ -226,6 +252,9 @@ def main():
             if not validate_report(obj):
                 obj.update(compute_window(now))  # window/day_start 以程序计算为准，覆写模型输出
                 obj, stats = rebalance_sections(obj)
+                obj, china_removed = filter_china_items(obj)
+                if china_removed:
+                    print(f"中国动向硬过滤: 移除{china_removed}条")
                 if any(stats.values()):
                     print(f"时间重排兜底: 移入第一部分{stats['moved_to_sec1']}条, "
                           f"移入第二部分{stats['moved_to_sec2']}条, 移除{stats['removed']}条")
