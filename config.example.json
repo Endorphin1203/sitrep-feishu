@@ -6,7 +6,10 @@
     "think tank OR CSIS OR RAND China military",
     "\"US military\" controversy OR criticism OR readiness",
     "site:reuters.com (military OR defense OR Pentagon)",
-    "(site:pacom.mil OR site:navy.mil OR site:af.mil OR site:northcom.mil OR site:eucom.mil)"
+    "(site:pacom.mil OR site:navy.mil OR site:af.mil OR site:northcom.mil OR site:eucom.mil)",
+    "site:apnews.com military",
+    "site:hudson.org",
+    "site:stripes.com"
   ],
   "expert_feeds": [
     "https://www.defensenews.com/arc/outboundfeeds/rss/",
@@ -20,7 +23,8 @@
     "https://moxie.foxnews.com/google-publisher/world.xml",
     "https://rss.nytimes.com/services/xml/rss/nyt/World.xml",
     "https://feeds.washingtonpost.com/rss/world",
-    "https://www.centcom.mil/DesktopModules/ArticleCS/RSS.ashx?ContentType=1&Site=808&max=20"
+    "https://www.centcom.mil/DesktopModules/ArticleCS/RSS.ashx?ContentType=1&Site=808&max=20",
+    "https://www.atlanticcouncil.org/feed/"
   ],
   "max_items": 120,
   "fetch_hours": 24,
