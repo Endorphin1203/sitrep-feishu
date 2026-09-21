@@ -41,7 +41,17 @@ echo "===== 开始运行 $TS ====="
 $PY fetch_news.py
 RC=$?
 if [ $RC -eq 2 ]; then
-  echo "无窗口内新条目，跳过生成"; alert "本次窗口内未抓到新条目"; exit 0
+  # 网络自愈兜底：开机后代理未就绪等场景下 SSL/DNS 失败导致0条，
+  # 等待90秒后重试一轮（看门狗10分钟内仍有余量）
+  echo "无窗口内新条目（疑似网络未就绪），等待90秒后重试…"
+  sleep 90
+  $PY fetch_news.py
+  RC=$?
+  if [ $RC -eq 2 ]; then
+    echo "重试后仍无新条目，跳过生成"; alert "本次窗口内未抓到新条目"; exit 0
+  elif [ $RC -ne 0 ]; then
+    echo "重试后抓取失败"; alert "新闻抓取失败，请检查网络"; exit 2
+  fi
 elif [ $RC -ne 0 ]; then
   echo "抓取失败"; alert "新闻抓取失败，请检查网络"; exit 2
 fi
