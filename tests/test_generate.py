@@ -73,10 +73,15 @@ class TestBuildPrompt(unittest.TestCase):
         self.assertIn("T=2026-09-01 00:30", prompt)
         self.assertIn("D=2026-08-31 00:00", prompt)
         self.assertIn("US strikes Iran", prompt)
-        # system 提示词含锚点值，且 JSON 示例花括号原样保留（format 陷阱回归测试）
-        self.assertIn("2026-08-31 19:30", system)
+        # system 提示词完全静态（锚点不注入 system），JSON 示例花括号原样保留
+        self.assertNotIn("2026-08-31 19:30", system)
+        self.assertNotIn("{S}", system)
         self.assertIn('{"window"', system)
         self.assertIn('"sources":[{"name":"","url":""}]', system)
+        # 静态性验证：不同时刻两次构建的 system 完全一致（缓存命中前提）
+        now2 = datetime(2026, 9, 2, 4, 30, tzinfo=timezone.utc)
+        _, system2 = gen.build_prompt(SAMPLE_ITEMS, now2)
+        self.assertEqual(system, system2)
         # 筛选范围约束：只收录美国侧新闻，排除中国军事动向
         self.assertIn("筛选范围约束", system)
         self.assertIn("不收录中国军事动向", system)

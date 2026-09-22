@@ -25,9 +25,7 @@ ITEM_FIELDS = ["cn_title", "source", "published_edt", "title_en", "title_cn",
 
 SYSTEM_PROMPT = """你是军事战略情报分析助手。基于提供的新闻条目（24小时抓取），产出中文简报JSON。
 
-时间锚点（美国东部时间EDT）：
-- 严格窗口起点S={S}、终点T={T}（S=T-5小时）
-- 当天起点D={D}（美东当天00:00）
+时间锚点（美国东部时间EDT）：见用户消息中的 S/T/D 定义——S=严格窗口起点、T=窗口终点（S=T-5小时）、D=当天起点（美东当天00:00）。本系统提示词保持完全静态以命中 API 前缀缓存，所有动态数值只出现在用户消息中。
 
 sections 五部分（顺序固定，section 名必须与给定完全一致）：
 1. "一、严格5小时窗口内"——发布时间在 S 与 T 之间的条目
@@ -85,8 +83,8 @@ def compute_anchors(now_utc):
 
 def build_prompt(items, now_utc):
     anchors = compute_anchors(now_utc)
-    # 注：提示词含 JSON 示例花括号，str.format 会误解析，故用 replace 填充锚点占位符
-    system = SYSTEM_PROMPT.replace("{S}", anchors["S_edt"]).replace("{T}", anchors["T_edt"]).replace("{D}", anchors["D_edt"])
+    # SYSTEM_PROMPT 完全静态（锚点只在用户消息中）——DeepSeek 前缀缓存可稳定命中系统提示词
+    system = SYSTEM_PROMPT
     lines = [f"{i+1}. [{it['source']}] {it['title']}\n   时间(UTC):{it['published_utc']} 链接:{it['url']}\n   摘要:{it['summary']}"
              for i, it in enumerate(items)]
     body = "\n".join(lines) or "（无条目）"
