@@ -56,7 +56,16 @@ elif [ $RC -ne 0 ]; then
   echo "抓取失败"; alert "新闻抓取失败，请检查网络"; exit 2
 fi
 
-$PY generate_report.py || { alert "DeepSeek 生成失败（可能余额不足或网络异常）"; exit 3; }
-$PY push_feishu.py      || { alert "飞书推送失败，请检查 webhook 与日志"; exit 4; }
+$PY generate_report.py || {
+  # 网络自愈兜底：开机后网络长时间未就绪/长请求断流时等待90秒重试一轮
+  echo "生成失败，等待90秒后重试…"
+  sleep 90
+  $PY generate_report.py || { alert "DeepSeek 生成失败（可能余额不足或网络异常）"; exit 3; }
+}
+$PY push_feishu.py      || {
+  echo "推送失败，等待90秒后重试…"
+  sleep 90
+  $PY push_feishu.py    || { alert "飞书推送失败，请检查 webhook 与日志"; exit 4; }
+}
 
 echo "===== 运行完成 ====="

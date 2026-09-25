@@ -106,15 +106,23 @@ class TestCallDeepseek(unittest.TestCase):
         resp = mock.Mock()
         resp.status_code = 200
         resp.json.return_value = {"choices": [{"message": {"content": "{}"}}]}
-        with mock.patch.object(gen.requests, "post", return_value=resp) as mp:
+        session = mock.Mock()
+        session.post.return_value = resp
+        with mock.patch.object(gen, "SESSION", session):
             self.assertEqual(gen.call_deepseek("p", "key", "sys"), "{}")
-            self.assertEqual(mp.call_args[1]["timeout"], 180)
+            kwargs = session.post.call_args[1]
+            self.assertEqual(kwargs["timeout"], 180)
+            # 模型切换锁定：v4-pro（推理模型需大输出配额供思考+正文）
+            self.assertEqual(kwargs["json"]["model"], "deepseek-v4-pro")
+            self.assertEqual(kwargs["json"]["max_tokens"], 32768)
 
     def test_402_raises_with_balance_hint(self):
         resp = mock.Mock()
         resp.status_code = 402
         resp.text = "Insufficient Balance"
-        with mock.patch.object(gen.requests, "post", return_value=resp):
+        session = mock.Mock()
+        session.post.return_value = resp
+        with mock.patch.object(gen, "SESSION", session):
             with self.assertRaises(RuntimeError) as cm:
                 gen.call_deepseek("p", "key", "sys")
             self.assertIn("余额", str(cm.exception))

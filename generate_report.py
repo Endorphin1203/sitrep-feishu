@@ -6,12 +6,22 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 BASE = Path(__file__).resolve().parent
 RAW_PATH = BASE / "logs" / "last_raw_items.json"
 OUT_PATH = BASE / "logs" / "last_report.json"
 API_URL = "https://api.deepseek.com/chat/completions"
 US_EAST = ZoneInfo("America/New_York")
+
+# 带自动重试的会话：v4-pro 思考时间长（1-3分钟），连接/读流中断（Response ended
+# prematurely）时自动重试2次，覆盖代理网络下的中途断流
+SESSION = requests.Session()
+RETRY = Retry(total=2, connect=2, read=2, backoff_factor=2,
+              status_forcelist=(500, 502, 503, 504))
+SESSION.mount("https://", HTTPAdapter(max_retries=RETRY))
+SESSION.mount("http://", HTTPAdapter(max_retries=RETRY))
 
 SECTION_NAMES = [
     "一、严格5小时窗口内",
@@ -93,19 +103,30 @@ def build_prompt(items, now_utc):
 
 
 def call_deepseek(prompt, api_key, system):
-    payload = {"model": "deepseek-chat", "temperature": 0.3, "max_tokens": 8192,
+    payload = {"model": "deepseek-v4-pro", "temperature": 0.3, "max_tokens": 32768,
                "response_format": {"type": "json_object"},
                "messages": [{"role": "system", "content": system},
                             {"role": "user", "content": prompt}]}
-    resp = requests.post(API_URL,
-                         headers={"Authorization": f"Bearer {api_key}",
-                                  "Content-Type": "application/json"},
-                         json=payload, timeout=180)
+    resp = SESSION.post(API_URL,
+                        headers={"Authorization": f"Bearer {api_key}",
+                                 "Content-Type": "application/json"},
+                        json=payload, timeout=180)
     if resp.status_code == 402:
         raise RuntimeError("DeepSeek 余额不足(402)，请充值后重试")
     if resp.status_code != 200:
         raise RuntimeError(f"DeepSeek API 错误 {resp.status_code}: {resp.text[:200]}")
-    return resp.json()["choices"][0]["message"]["content"]
+    data = resp.json()
+    content = (data["choices"][0]["message"].get("content") or "").strip()
+    if not content:
+        # 推理模型可能思考超限导致内容为空，带诊断信息抛出便于排查
+        raise RuntimeError(f"模型返回空内容: finish_reason={data['choices'][0].get('finish_reason')} "
+                           f"usage={data.get('usage')}")
+    usage = data.get("usage", {})
+    print(f"[usage] prompt={usage.get('prompt_tokens', '?')} "
+          f"(缓存命中{usage.get('prompt_cache_hit_tokens', 0)}) "
+          f"completion={usage.get('completion_tokens', '?')} "
+          f"(思考{usage.get('completion_tokens_details', {}).get('reasoning_tokens', 0)})", file=sys.stderr)
+    return content
 
 
 def parse_report(text):
